@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GPS Tracker</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+        }
+        /* Sidebar */
+        #sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 1px solid #ddd;
+            padding: 15px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        #sidebar h2 {
+            margin-top: 0;
+            font-size: 20px;
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .status.online { background: #4CAF50; color: #fff; }
+        .status.offline { background: #f44336; color: #fff; }
+
+        .info {
+            margin-bottom: 10px;
+        }
+        .info strong {
+            display: inline-block;
+            width: 90px;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        button:hover { background: #0056b3; }
+
+        #map {
+            flex: 1;
+        }
+
+        .time-filter {
+            margin-top: 20px;
+        }
+        .time-filter label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .time-filter input {
+            width: 100%;
+            padding: 6px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        #distanceResult {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Animal Tracker</h2>
+        <div id="status" class="status offline">Status: Offline</div>
+
+        <div class="info"><strong>Last Seen:</strong> <span id="lastSeen">-</span></div>
+        <div class="info"><strong>Lat:</strong> <span id="lat">-</span></div>
+        <div class="info"><strong>Lng:</strong> <span id="lng">-</span></div>
+
+        <button onclick="centerOnAnimal()">Center on Animal</button>
+
+        <div class="time-filter">
+            <h3>Filter Waktu</h3>
+            <label>Dari Jam:</label>
+            <input type="time" id="startTime">
+            <label>Sampai Jam:</label>
+            <input type="time" id="endTime">
+            <button onclick="filterByTime()">Tampilkan Jarak</button>
+            <button onclick="resetMarkers()" style="background:#6c757d;">Reset Semua Marker</button>
+            <div id="distanceResult">Total Jarak: -</div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+   <script>
+    mapboxgl.accessToken = 'pk.eyJ1Ijoid2lzbWFycHV0cmEiLCJhIjoiY21lNWgydzg0MHM4djJqczkwbDl2OGY0aiJ9.9K09IzyFEQJegGaIP2AqJA'; 
+    
+    let defaultLocation = [107.609810, -6.914744];    
+    let map = new mapboxgl.Map({
+        container : 'map',
+        style : 'mapbox://styles/mapbox/streets-v11',
+        center : defaultLocation,
+        zoom : 20
+    });
+
+    // Membuat marker utama
+    let markerHewan = document.createElement('div');
+    markerHewan.style.backgroundImage = 'url("KUCHING.png")';
+    markerHewan.style.backgroundSize = 'cover';
+    markerHewan.style.width = '40px';
+    markerHewan.style.height = '40px';
+    markerHewan.style.borderRadius = '50%';
+    markerHewan.style.border = '2px solid white';
+    markerHewan.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+
+    let marker = new mapboxgl.Marker(markerHewan)
+        .setLngLat(defaultLocation)
+        .setPopup(new mapboxgl.Popup({offset:25}).setText('Hewan'))
+        .addTo(map);
+
+    map.on('load', function() {
+        map.addSource('pointSource',{
+            type: 'geojson',
+            data: {type: 'FeatureCollection', features: []}
+        });
+        
+        map.addLayer({
+            id: 'points',
+            type: 'circle',
+            source: 'pointSource',
+            paint: {'circle-radius': 5, 'circle-color': '#FF4136'}
+        });
+
+        map.on('click', 'points', function(a){
+            let coordinates = a.features[0].geometry.coordinates.slice();
+            let waktu = a.features[0].properties.time || "-";
+            let lat = coordinates[1].toFixed(5);
+            let lng = coordinates[0].toFixed(5);
+
+            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxgl.accessToken}`)
+                .then(res => res.json())
+                .then(geo =>{
+                    let lokasi = geo.features.length > 0 ? geo.features[0].place_name : "Lokasi tidak diketahui";
+
+                    new mapboxgl.Popup()
+                        .setLngLat(coordinates)
+                        .setHTML(`
+                            <strong>Waktu:</strong>${waktu}<br>
+                            <strong>Lokasi:</strong>${lokasi}<br>
+                            <strong>Lat:</strong>${lat}<br>
+                            <strong>LNG:</strong>${lng}<br>
+                        `)
+                        .addTo(map);
+                })
+                .catch(()=>{
+                    new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(`
+                        <strong>Waktu:</strong>${waktu}<br>
+                        <strong>Lat:</strong>${lat}<br>
+                        <strong>LNG:</strong>${lng}<br>
+                        <em>Lokasi gagal dimuat</em>
+                    `)  
+                    .addTo(map)
+                })
+        });
+    });
+
+    function setStatus(online){
+        const statusDiv = document.getElementById("status");
+        if(online){
+            statusDiv.textContent = "Status: Online";
+            statusDiv.className = "status online";
+        } else{
+            statusDiv.textContent = "Status: Offline";
+            statusDiv.className = "status offline";
+        }
+    }
+
+    let lastLocation = defaultLocation;
+    let allData = [];
+
+    function fetchLocation(){
+        fetch("get_gps.php")
+            .then(res => res.json())
+            .then(data => {
+                if(data.length > 0){
+                    allData = data;
+                    let last = data[data.length - 1];
+                    lastLocation = [last.lng, last.lat];
+
+                    marker.setLngLat(lastLocation);
+                
+                    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${last.lng},${last.lat}.json?access_token=${mapboxgl.accessToken}`)
+                        .then(res => res.json())
+                        .then(geo => {
+                            let lokasi = geo.features.length > 0 ? geo.features[0].place_name : "Lokasi tidak diketahui";
+                            marker.setPopup(
+                                new mapboxgl.Popup({offset:25})
+                                    .setHTML(`<strong>Hewan</strong><br>Lokasi: ${lokasi}<br>Waktu: ${last.time}`)
+                            );
+                        });
+
+                    showMarkers(allData);
+
+                    document.getElementById("lastSeen").textContent = last.time;
+                    document.getElementById("lat").textContent = last.lat.toFixed(6);
+                    document.getElementById("lng").textContent = last.lng.toFixed(6);
+
+                    setStatus(true)
+                } else{
+                    setStatus(false)
+                }
+            })
+            .catch(()=> setStatus(false))
+    }
+    
+    function showMarkers(dataset){
+        map.getSource('pointSource').setData({
+            
+        })
+    }
+   </script>
+</body>
+</html>
